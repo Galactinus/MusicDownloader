@@ -1,5 +1,6 @@
 #!/bin/python3
 
+import re
 from pytube import YouTube  # library to donwload songs and urls
 from pytube import Playlist  # library do donwload playlists
 # library to gather ytmusic search results with urls, artworks and other metadatas
@@ -39,11 +40,17 @@ def term_text(txt):  # formatting text to be terminal friendly
         txt = txt.replace(")", "\)")
     return txt
 
+def recurs_delete(path):
+    if os.name == "nt":
+        os.system(f"del /S {path}")  # clean webm files
+    else:
+        os.system(f"rm -r {term_text(file_path)}")  # clean webm files
 
 def down_song(link):  # function to download songs
     yt = YouTube(link)
     print(f"\nDonwloading {yt.title}")
     file_path = f"{path}{yt.author.replace(' - Topic', '')} - {yt.title.replace('/','-')}.webm"
+    print(yt.streams)
     yt.streams.filter(only_audio=True, abr="160kbps").first().download(
         output_path=f"{path}", filename=f"{yt.author.replace(' - Topic', '')} - {yt.title.replace('/','-')}.webm")
     try:
@@ -53,39 +60,77 @@ def down_song(link):  # function to download songs
 
     except Exception as e:
         return("mp3_conv or tags_and_art failed: ", e)
-
-    os.system(f"rm -r {term_text(file_path)}")  # clean webm files
+    recurs_delete(term_text(file_path))
 
     print("\nDONE\n")
 
 
 def down_plist(link):  # function do download playlists
+    full_pattern = re.compile('[^/-_ a-zA-Z0-9\\/]')
     p = Playlist(link)
-    title = p.title.replace("Album - ", "")
+    title = p.title.replace("Album - ", "")      
+    title = title.replace('/','-')
+    title = title.replace(' ', '_')
+    title = re.sub(full_pattern, '', title)
     numb = 1
     print(f"Downloading {title}\n")
 
+
     for song in p.videos:
-        file_path = f"{path}{song.author.replace(' - Topic', '')} - {title}/webm/"
-        print(f"\nDownloading {song.title}")
+        # Format song title
+        song_title = song.title.replace('/','-')
+        song_title = song_title.replace(' ', '_')
+        song_title = re.sub(full_pattern, '', song_title)
+
+        # format song author
+        song_author = song.author.replace(' - Topic', '')
+        song_author = song_author.replace('/','-')
+        song_author = song_author.replace(' ', '_')
+        song_author = re.sub(full_pattern, '', song_author)
+        # temp path
+        temp_path = f"{path}temp_{song_author}-{title}/webm/"
+        webm_file_name = f"{song_title}.webm"
+        final_file_name = f"{song_title}.mp3"
+        print(f"temp_path:{temp_path}")
+        print(f"webm_file_name:{webm_file_name}")
+        print(f"final_file_name:{final_file_name}")
+        print(f"\nDownloading {song_title} by {song_author}")
         song.streams.filter(only_audio=True, abr="160kbps").first().download(
-            output_path=f"{path}{song.author.replace(' - Topic', '')} - {title}/webm/", filename=f"{str(numb)} - {song.title.replace('/','-')}.webm")
+            output_path=temp_path, filename=webm_file_name)
+        
+        print("Download finished, converting")
+        
         try:
-            mp3_conv(f"{file_path}{str(numb)} - {song.title.replace('/','-')}.webm",
-                     f"{path}{song.author.replace(' - Topic', '')} - {title}/{song.title.replace('/','-')}.mp3")
-            tags_and_art(f"{path}{song.author.replace(' - Topic', '')} - {title}/{song.title.replace('/','-')}.mp3",
-                         song.title, title, song.author.replace(' - Topic', ''), str(numb), song.thumbnail_url)
+            mp3_conv(f"{temp_path}{webm_file_name}",
+                     f"{path}{final_file_name}")
 
         except Exception as e:
-            return("mp3_conv or tags_and_art failed: ", e)
+            print("Failed to convert to mp3")
+            print(f"Source: {temp_path}{webm_file_name} | dest: {path}{final_file_name}")
+            return("mp3_conv failed: ", e)
+        print("Conversion finished, writing metadata")
+        try:
+            tags_and_art(f"{path}{final_file_name}",
+                         song.title.replace('_', ' '), title, song.author.replace(' - Topic', ''), str(numb), song.thumbnail_url)
+        except Exception as e:
+            print("Failed setting mp3 tags" + e)
+            return("mp3 tags_and_art failed: ", e)
+        print(f"Track {numb} finished: {song_title}")
         numb += 1
+        # if os.name == 'nt':
+        #     os.system(f"move {temp_path}\\{final_file_name} {path}\\")
+        # else:
+        #     os.system(f"mv {file_path}/{song_title}.mp3 {path}/")
+            
 
-    os.system(f"rm -r {term_text(file_path[:-1])}")
+
+        recurs_delete(temp_path)
     print("\nDONE\n")  # clean webm files
 
 
 # add tags and artwork to the mp3 files
 def tags_and_art(file_path, song_name, album, author, trk_nmbr, art_link):
+    print(art_link)
     f = music_tag.load_file(file_path)
     f['title'] = song_name
     f['artist'] = author
@@ -93,15 +138,32 @@ def tags_and_art(file_path, song_name, album, author, trk_nmbr, art_link):
         f['album'] = album
     if trk_nmbr != None:
         f['tracknumber'] = trk_nmbr
+
     file_name = wget.download(art_link)
-    fl_nm = Image.open(file_name)
-    file_name_cr = fl_nm.crop((140, 60, 500, 420))
-    file_name_cr.save("img.jpg")
+    image = Image.open(file_name)
+    print("\nwidth = " + str(image.width) + " height = " + str(image.height))
+    if image.height != image.width:
+        if image.height > image.width:
+            excess = image.height - image.width
+            image = image.crop((0, (excess / 2),  image.width,(image.width + (excess / 2))))
+        else:
+            excess = image.width - image.height
+            image = image.crop(((excess / 2), 0,  (image.height + (excess / 2)), image.height))
+
+    print("\nwidth = " + str(image.width) + " height = " + str(image.height))
+    if(image.height > 1200):
+        image.resize((1200, 1200))
+    print("\nwidth = " + str(image.width) + " height = " + str(image.height))
+    image.save("img.jpg")
     with open("img.jpg", 'rb') as img_in:
         f['artwork'] = img_in.read()
     f.save()
-    os.system('rm img.jpg')
-    os.system(f'rm {term_text(file_name)}')
+    if os.name == "nt":
+        os.system('del img.jpg')
+        os.system(f'del {term_text(file_name)}')
+    else:
+        os.system('rm img.jpg')
+        os.system(f'rm {term_text(file_name)}')
 
 #convert webm to mp3
 
@@ -144,7 +206,7 @@ def mdown(id, url):
 
 
 while True:
-    mode = input("Chose MODE album(a) song(s) url(u) quit(q): ")
+    mode = input("Chose MODE album(a) song(s) url(u) quit(q) playlist(l): ")
     if mode.lower().strip() == "a":
         mode = "albums"
         key = "browseId"
@@ -154,6 +216,10 @@ while True:
 
     elif mode.lower().strip() == "q":
         break
+    elif mode.lower().strip() == "l":
+        url = input("\n Paste URL here: ")
+        down_plist(url)
+        continue
 
     elif mode.lower().strip() == "u":
         url = input("\npaste URL here: ")
