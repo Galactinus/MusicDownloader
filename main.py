@@ -5,6 +5,7 @@ from pytube import Playlist  # library do donwload playlists
 # library to gather ytmusic search results with urls, artworks and other metadatas
 from ytmusicapi import YTMusic
 from pydub import AudioSegment  # lib to convert audio formats
+AudioSegment.converter = r"C:\Users\chadb\Downloads\ffmpeg.exe"
 # execute os level commands, used to clean temporary files (webm) after download
 import os
 import music_tag  # lib to add tags and artworks to mp3 files
@@ -28,9 +29,14 @@ else:  # if the path_var is defined ask the user if he wanna update it
 
 
 def term_text(txt):  # formatting text to be terminal friendly
-    txt = txt.replace(" ", "\ ")
-    txt = txt.replace("(", "\(")
-    txt = txt.replace(")", "\)")
+    if(os.name == 'nt'):
+        txt = txt.replace(" ", "/ ")
+        txt = txt.replace("(", "/(")
+        txt = txt.replace(")", "/)")
+    else:
+        txt = txt.replace(" ", "\ ")
+        txt = txt.replace("(", "\(")
+        txt = txt.replace(")", "\)")
     return txt
 
 
